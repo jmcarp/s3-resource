@@ -83,6 +83,90 @@ var _ = Describe("out", func() {
 		})
 	})
 
+	Context("with a content-type", func() {
+		BeforeEach(func() {
+			ioutil.WriteFile(filepath.Join(sourceDir, "content-typed-file"), []byte("text only"), 0755)
+
+			outRequest := out.OutRequest{
+				Source: s3resource.Source{
+					AccessKeyID:     accessKeyID,
+					SecretAccessKey: secretAccessKey,
+					Bucket:          bucketName,
+					RegionName:      regionName,
+					Endpoint:        endpoint,
+				},
+				Params: out.Params{
+					From:        filepath.Join(sourceDir, "content-typed-file"),
+					To:          "",
+					ContentType: "application/customtype",
+					Acl:         "public-read",
+				},
+			}
+
+			err := json.NewEncoder(stdin).Encode(&outRequest)
+			Ω(err).ShouldNot(HaveOccurred())
+
+			expectedExitStatus = 0
+		})
+
+		AfterEach(func() {
+			err := s3client.DeleteFile(bucketName, "content-typed-file")
+			Ω(err).ShouldNot(HaveOccurred())
+		})
+
+		It("creates a file with the specified content-type", func() {
+			response, err := s3Service.HeadObject(&s3.HeadObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String("content-typed-file"),
+			})
+			Ω(err).ShouldNot(HaveOccurred())
+
+			Expect(response.ContentType).To(Equal(aws.String("application/customtype")))
+		})
+	})
+
+	Context("without a content-type", func() {
+		BeforeEach(func() {
+			ioutil.WriteFile(filepath.Join(sourceDir, "uncontent-typed-file"), []byte("text only"), 0755)
+
+			outRequest := out.OutRequest{
+				Source: s3resource.Source{
+					AccessKeyID:     accessKeyID,
+					SecretAccessKey: secretAccessKey,
+					Bucket:          bucketName,
+					RegionName:      regionName,
+					Endpoint:        endpoint,
+				},
+				Params: out.Params{
+					From: filepath.Join(sourceDir, "uncontent-typed-file"),
+					To:   "",
+					Acl:  "public-read",
+				},
+			}
+
+			err := json.NewEncoder(stdin).Encode(&outRequest)
+			Ω(err).ShouldNot(HaveOccurred())
+
+			expectedExitStatus = 0
+		})
+
+		AfterEach(func() {
+			err := s3client.DeleteFile(bucketName, "uncontent-typed-file")
+			Ω(err).ShouldNot(HaveOccurred())
+		})
+
+		// http://docs.aws.amazon.com/AWSImportExport/latest/DG/FileExtensiontoMimeTypes.html
+		It("creates a file with the default S3 content-type for a unknown filename extension", func() {
+			response, err := s3Service.HeadObject(&s3.HeadObjectInput{
+				Bucket: aws.String(bucketName),
+				Key:    aws.String("uncontent-typed-file"),
+			})
+			Ω(err).ShouldNot(HaveOccurred())
+
+			Expect(response.ContentType).To(Equal(aws.String("binary/octet-stream")))
+		})
+	})
+
 	Context("with a file glob and from", func() {
 		BeforeEach(func() {
 			outRequest := out.OutRequest{
@@ -186,7 +270,7 @@ var _ = Describe("out", func() {
 			It("allows everyone to have read access to the object", func() {
 				anonURI := "http://acs.amazonaws.com/groups/global/AllUsers"
 				permision := s3.PermissionRead
-				grantee := s3.Grantee{URI: &anonURI}
+				grantee := s3.Grantee{URI: &anonURI, Type: aws.String("Group")}
 				expectedGrant := s3.Grant{
 					Grantee:    &grantee,
 					Permission: &permision,

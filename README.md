@@ -103,6 +103,9 @@ a new version of that file.
 
 * `acl`: *Optional.*  [Canned Acl](http://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html)
   for the uploaded object.
+  
+* `content_type`: *Optional.* MIME [Content-Type](https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.17)
+  describing the contents of the uploaded object
 
 ## Example Configuration
 
@@ -135,18 +138,24 @@ a new version of that file.
 
 ### Non-versioned Buckets
 
+The bucket itself (e.g. `"arn:aws:s3:::your-bucket"`):
+* `s3:ListBucket`
+
+The objects in the bucket (e.g. `"arn:aws:s3:::your-bucket/*"`):
 * `s3:PutObject`
 * `s3:PutObjectAcl`
 * `s3:GetObject`
-* `s3:ListBucket`
 
 ### Versioned Buckets
 
 Everything above and...
 
-* `s3:GetBucketVersioning`
-* `s3:GetObjectVersion`
+The bucket itself (e.g. `"arn:aws:s3:::your-bucket"`):
 * `s3:ListBucketVersions`
+* `s3:GetBucketVersioning`
+
+The objects in the bucket (e.g. `"arn:aws:s3:::your-bucket/*"`):
+* `s3:GetObjectVersion`
 * `s3:PutObjectVersionAcl`
 
 ## Developing on this resource

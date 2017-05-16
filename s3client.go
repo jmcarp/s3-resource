@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -23,7 +24,7 @@ type S3Client interface {
 	BucketFiles(bucketName string, prefixHint string) ([]string, error)
 	BucketFileVersions(bucketName string, remotePath string) ([]string, error)
 
-	UploadFile(bucketName string, remotePath string, localPath string, acl string, serverSideEncryption string, kmsKeyId string) (string, error)
+	UploadFile(bucketName string, remotePath string, localPath string, options UploadFileOptions) (string, error)
 	DownloadFile(bucketName string, remotePath string, versionID string, localPath string) error
 
 	DeleteFile(bucketName string, remotePath string) error
@@ -41,6 +42,19 @@ type s3client struct {
 	session *session.Session
 
 	progressOutput io.Writer
+}
+
+type UploadFileOptions struct {
+	Acl                  string
+	ServerSideEncryption string
+	KmsKeyId             string
+	ContentType          string
+}
+
+func NewUploadFileOptions() UploadFileOptions {
+	return UploadFileOptions{
+		Acl: "private",
+	}
 }
 
 func NewS3Client(
@@ -149,8 +163,13 @@ func (client *s3client) BucketFileVersions(bucketName string, remotePath string)
 	return versions, nil
 }
 
-func (client *s3client) UploadFile(bucketName string, remotePath string, localPath string, acl string, serverSideEncryption string, kmsKeyId string) (string, error) {
+func (client *s3client) UploadFile(bucketName string, remotePath string, localPath string, options UploadFileOptions) (string, error) {
 	uploader := s3manager.NewUploader(client.session)
+
+	if client.isGCSHost() {
+		// GCS returns `InvalidArgument` on multipart uploads
+		uploader.MaxUploadParts = 1
+	}
 
 	stat, err := os.Stat(localPath)
 	if err != nil {
@@ -173,13 +192,16 @@ func (client *s3client) UploadFile(bucketName string, remotePath string, localPa
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(remotePath),
 		Body:   progressSeekReaderAt{localFile, progress},
-		ACL:    aws.String(acl),
+		ACL:    aws.String(options.Acl),
 	}
-	if serverSideEncryption != "" {
-		uploadInput.ServerSideEncryption = aws.String(serverSideEncryption)
+	if options.ServerSideEncryption != "" {
+		uploadInput.ServerSideEncryption = aws.String(options.ServerSideEncryption)
 	}
-	if kmsKeyId != "" {
-		uploadInput.SSEKMSKeyId = aws.String(kmsKeyId)
+	if options.KmsKeyId != "" {
+		uploadInput.SSEKMSKeyId = aws.String(options.KmsKeyId)
+	}
+	if options.ContentType != "" {
+		uploadInput.ContentType = aws.String(options.ContentType)
 	}
 
 	uploadOutput, err := uploader.Upload(&uploadInput)
@@ -407,4 +429,8 @@ func (client *s3client) newProgressBar(total int64) *pb.ProgressBar {
 	progress.NotPrint = true
 
 	return progress.SetWidth(80)
+}
+
+func (client *s3client) isGCSHost() bool {
+	return (client.session.Config.Endpoint != nil && strings.Contains(*client.session.Config.Endpoint, "storage.googleapis.com"))
 }
